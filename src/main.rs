@@ -148,12 +148,15 @@ fn add_to_purchase_queue(thing_to_add: String) -> Result<()> {
         }
     }
 
+    let amount = format!("{:.2}", M::from(parsed));
+    println!("Adding \"{}\" for ${} to the list.", &thing_to_add, amount);
     let mut state = read_file();
     let item = Item {
         name: thing_to_add,
         amount: M::from(parsed),
     };
     state.future_purchases.append(&mut vec![item]);
+
     write_file(state)
 }
 
