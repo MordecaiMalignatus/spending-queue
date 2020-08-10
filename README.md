@@ -13,6 +13,34 @@ start up a shell.
 In the future, I should probably also trigger Omnifocus Automation and the
 likes, but for right now, this is good.
 
+## Usage
+
+The basic usage is simple. Set how much money you put aside for "fun stuff", and
+in what interval, ie `sq budget --amount 50 --interval 30`, signifying $50 set
+aside every 30 days. `sq` prorates this over the month, ie the ratio matters,
+and is calculated in second increments.
+
+Once you have your budget set, add things you want to have for yourself. This is
+a strict queue, so whatever you enter will be appended. For example, `sq add A
+new screen.`. `sq` will then prompt you for how much that would be:
+
+```bash
+p/sq ╍ sq add A fancy thing.
+What does this cost?:
+250
+p/sq ╍
+```
+
+Then, you wait. Ideally, you've put `sq` somewhere where you look at it
+regularly - I added it to my `fish.config`. That way I see the output of `sq
+status` every time I open a shell.
+
+Once `sq` tells you that your current budget is higher than the next thing in
+the purchasing queue, hit `sq buy`. This will mark the top item as bought, and
+shuffle the next one up. Treat this like a chore, something to do mechanically.
+
+Then, the joy lands when it arrives. Or so the theory.
+
 
 ## Installing/Building
 
