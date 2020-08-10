@@ -1,4 +1,4 @@
-use ansi_term::{ANSIString, Color, Style};
+use ansi_term::Style;
 use chrono::prelude::*;
 use clap::{App, AppSettings, Arg};
 use fraction::prelude::*;
