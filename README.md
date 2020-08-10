@@ -28,6 +28,7 @@ new screen.`. `sq` will then prompt you for how much that would be:
 p/sq ╍ sq add A fancy thing.
 What does this cost?:
 250
+Adding "A fancy thing." for $250 to the list.
 p/sq ╍
 ```
 
