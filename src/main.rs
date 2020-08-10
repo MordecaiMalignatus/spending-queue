@@ -17,19 +17,21 @@ fn main() -> Result<()> {
         .about("The tiniest spending queue")
         .subcommand(App::new("status").about("Report the current state"))
         .subcommand(
-            App::new("income")
-                .about("Change income.")
+            App::new("budget")
+                .about("Change budget.")
                 .arg(
                     Arg::with_name("amount")
-                        .help("Amount of money earned by interval")
+                        .help("Amount of money budgeted by interval")
                         .short("a")
+                        .long("amount")
                         .takes_value(true)
                         .required(false),
                 )
                 .arg(
                     Arg::with_name("interval")
-                        .help("Interval of money income, measured in days.")
+                        .help("Interval of money budget, measured in days.")
                         .short("i")
+                        .long("interval")
                         .takes_value(true)
                         .default_value("30")
                         .required(false),
@@ -46,19 +48,19 @@ fn main() -> Result<()> {
 
     match args.subcommand() {
         ("status", _) => display_status(),
-        ("income", Some(matches)) => {
+        ("budget", Some(matches)) => {
             let income = matches
                 .value_of("amount")
                 .unwrap()
                 .parse::<u64>()
-                .expect("can't parse income");
+                .expect("can't parse amount");
             let interval = matches
                 .value_of("interval")
                 .unwrap()
                 .parse()
                 .expect("can't parse interval");
 
-            update_income(M::from(income), interval)
+            update_budget(M::from(income), interval)
         }
         ("buy", _) => buy_item(),
         ("add", Some(matches)) => {
@@ -203,7 +205,7 @@ fn calculate_current_amount(state: &State) -> (DateTime<Local>, M) {
     (now, subtotal)
 }
 
-fn update_income(amount: M, interval: u8) -> Result<()> {
+fn update_budget(amount: M, interval: u8) -> Result<()> {
     let mut state = read_file();
 
     println!("Updated income to ${:.2} per {} days.", amount, interval);
