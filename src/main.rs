@@ -199,7 +199,7 @@ fn calculate_current_amount(state: &State) -> (DateTime<Local>, M) {
     let interval = M::from(state.income.interval_in_days as u64);
     let current_balance = M::from(state.current_amount);
 
-    let seconds_in_interval = M::from(24u64 * 60 * 60 * 60) * interval;
+    let seconds_in_interval = M::from(24u64 * 60 * 60) * interval;
     let money_per_second = state.income.amount / seconds_in_interval;
     let since_last_calc = time_between * money_per_second;
 
