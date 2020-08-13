@@ -90,7 +90,6 @@ struct Income {
 #[derive(Serialize, Deserialize, Debug)]
 struct State {
     income: Income,
-    /// unix timestamp, because lazy
     last_calculation: String,
     current_amount: M,
     future_purchases: Vec<Item>,
@@ -127,7 +126,7 @@ fn buy_item() -> Result<()> {
 fn add_to_purchase_queue(thing_to_add: String) -> Result<()> {
     let stdin = std::io::stdin();
     let mut line = String::new();
-    let parsed: u64;
+    let parsed: f64;
 
     loop {
         println!("What does this cost?: ");
@@ -141,11 +140,13 @@ fn add_to_purchase_queue(thing_to_add: String) -> Result<()> {
                     }
                     Err(e) => {
                         eprintln!("Can't parse amount, try again: {}", e);
+                        line.clear();
                     }
                 }
             }
             Err(e) => panic!("Can't read from stdin: {}", e),
         }
+
     }
 
     let amount = format!("{:.2}", M::from(parsed));
