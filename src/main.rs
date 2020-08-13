@@ -264,3 +264,24 @@ fn read_file() -> State {
 fn write_file(state: State) -> Result<()> {
     fs::write(file(), serde_json::to_string_pretty(&state).unwrap())
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn should_calculate_accumulation() {
+        let now = Local::now();
+        let yesterday = now - chrono::Duration::days(1);
+        let demo_state = State {
+            income: Income { amount: M::from(100), interval_in_days: 1 },
+            last_calculation: yesterday.to_rfc2822(),
+            current_amount: M::from(0),
+            future_purchases: vec![],
+            past_purchases: vec![],
+        };
+        let (_last_update, balance) = calculate_current_amount(&demo_state);
+
+        assert_eq!(balance, M::from(100));
+    }
+}
