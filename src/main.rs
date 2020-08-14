@@ -3,6 +3,7 @@ use chrono::prelude::*;
 use clap::{App, AppSettings, Arg};
 use fraction::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::env;
 use std::fs;
 use std::io::Result;
@@ -92,14 +93,14 @@ struct State {
     income: Income,
     last_calculation: String,
     current_amount: M,
-    future_purchases: Vec<Item>,
-    past_purchases: Vec<Item>,
+    future_purchases: VecDeque<Item>,
+    past_purchases: VecDeque<Item>,
 }
 
 fn buy_item() -> Result<()> {
     let mut state = read_file();
 
-    match state.future_purchases.first() {
+    match state.future_purchases.front() {
         Some(item) => {
             if item.amount < state.current_amount {
                 let item_amount = format!("{:.2}", item.amount);
@@ -111,8 +112,8 @@ fn buy_item() -> Result<()> {
                     Style::new().bold().paint(current_amount)
                 );
                 state.current_amount = state.current_amount - item.amount;
-                let last = state.future_purchases.pop().unwrap();
-                state.past_purchases.append(&mut vec![last]);
+                let last = state.future_purchases.pop_front().unwrap();
+                state.past_purchases.push_back(last);
             }
         }
         None => {
@@ -156,7 +157,7 @@ fn add_to_purchase_queue(thing_to_add: String) -> Result<()> {
         name: thing_to_add,
         amount: M::from(parsed),
     };
-    state.future_purchases.append(&mut vec![item]);
+    state.future_purchases.push_back(item);
 
     write_file(state)
 }
@@ -174,7 +175,7 @@ fn display_status() -> Result<()> {
         Style::new().bold().paint(amount)
     );
 
-    match state.future_purchases.first() {
+    match state.future_purchases.front() {
         Some(item) => {
             let amount = format!("{:.2}", item.amount);
             println!(
@@ -254,8 +255,8 @@ fn read_file() -> State {
                 },
                 current_amount: M::from(0),
                 last_calculation: Local::now().to_rfc2822(),
-                future_purchases: Vec::new(),
-                past_purchases: Vec::new(),
+                future_purchases: VecDeque::new(),
+                past_purchases: VecDeque::new(),
             }
         }
     }
