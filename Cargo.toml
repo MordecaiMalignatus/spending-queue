@@ -14,3 +14,4 @@ chrono = "0.4"
 ansi_term = "0.12.1"
 fraction = {version = "0.6.3", features = ["with-serde-support"] }
 rand = "0.8.4"
+prettytable-rs = "0.8.0"

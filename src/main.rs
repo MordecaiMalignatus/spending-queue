@@ -4,6 +4,10 @@ use ansi_term::Style;
 use chrono::prelude::*;
 use clap::{App, AppSettings, Arg};
 use fraction::prelude::*;
+use prettytable::Table;
+use prettytable::format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR;
+use prettytable::row;
+use prettytable::cell;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -260,28 +264,36 @@ fn open_url(url: &Option<String>) -> Result<()> {
 /// Print the list as it is right now.
 fn display_queue() {
     let state = read_file();
+    let mut table = Table::new();
+    table.set_titles(row!("Name", "Cost"));
+    table.set_format(*FORMAT_NO_BORDER_LINE_SEPARATOR);
     state.future_purchases.iter().for_each(|item| {
         let cost = format!("${:#.2}", item.amount);
-        let name = if item.purchase_link.is_some() {
-            Style::new().italic().paint(item.name.clone())
+        if item.purchase_link.is_some() {
+            table.add_row(row!(bi->item.name, cost));
         } else {
-            item.name.clone().into()
+            table.add_row(row!(b->item.name, cost));
         };
-        println!("{}\t{}", name, cost);
     });
+
+    table.printstd();
+    println!();
 }
 
 /// Print list of past purchases, the things already bought.
 fn display_prior_purchases() {
     let state = read_file();
+    let mut table = Table::new();
+    table.set_titles(row!("Name", "Cost", "Purchased"));
+    table.set_format(*FORMAT_NO_BORDER_LINE_SEPARATOR);
     state.past_purchases.iter().for_each(|item| {
         let cost = format!("${:#.2}", item.amount);
-        let ts = match &item.time_purchased {
-            Some(ts) => ts,
-            None => "",
-        };
-        println!("{}\t{}\t{}", item.name, cost, ts);
+        let ts = item.time_purchased.clone().unwrap_or_default();
+        table.add_row(row!(b->item.name, cost, ts));
     });
+
+    table.printstd();
+    println!();
 }
 
 fn parse_float_from_stdin(prompt: &str) -> f64 {
