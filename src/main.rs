@@ -4,10 +4,10 @@ use ansi_term::Style;
 use chrono::prelude::*;
 use clap::{App, AppSettings, Arg};
 use fraction::prelude::*;
-use prettytable::Table;
+use prettytable::cell;
 use prettytable::format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR;
 use prettytable::row;
-use prettytable::cell;
+use prettytable::Table;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -42,11 +42,12 @@ fn main() -> Result<()> {
         }
         ("buy", Some(m)) => {
             let no_open = m.is_present("no-open");
+            let peek = m.is_present("peek");
             let new_price = m
                 .value_of("new_price")
                 .map(|s| s.parse::<f64>().expect("Can't parse specified new price"))
                 .map(M::from);
-            buy_item(no_open, new_price)?;
+            buy_item(no_open, new_price, peek)?;
         }
         ("list", _) => display_queue(),
         ("delete", _) => delete_head_item()?,
@@ -106,6 +107,13 @@ fn parse_args() -> clap::ArgMatches<'static> {
                         .required(false),
                 )
                 .arg(
+                    Arg::with_name("peek")
+                        .help("Open the purchase URL without buying anything")
+                        .long("--peek")
+                        .takes_value(false)
+                        .required(false),
+                )
+                .arg(
                     Arg::with_name("new_price")
                         .help("Set price explicitly if it no longer matches what's in the list")
                         .short("p")
@@ -158,18 +166,24 @@ struct State {
     past_purchases: VecDeque<Item>,
 }
 
-fn buy_item(suppress_opening_url: bool, new_price: Option<M>) -> Result<()> {
+fn buy_item(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Result<()> {
     let mut state = read_file();
 
     match state.future_purchases.front_mut() {
         Some(item) => {
-            if item.amount < state.current_amount {
+            if peek {
+                open_url(&item.purchase_link)?;
+            } else if item.amount < state.current_amount {
                 let cost = match new_price {
                     Some(x) => x,
                     None => item.amount,
                 };
                 let current_amount_string = format!("{:#.2}", state.current_amount - item.amount);
                 let item_amount_string = format!("{:#.2}", cost);
+
+                if !suppress_opening_url {
+                    open_url(&item.purchase_link.clone())?;
+                }
 
                 let now = Local::now().to_rfc2822();
                 item.time_purchased = Some(now);
@@ -180,10 +194,6 @@ fn buy_item(suppress_opening_url: bool, new_price: Option<M>) -> Result<()> {
                     Style::new().bold().paint(item_amount_string),
                     Style::new().bold().paint(current_amount_string)
                 );
-
-                if !suppress_opening_url {
-                    open_url(&item.purchase_link.clone())?;
-                }
 
                 state.current_amount -= cost;
                 let last = state.future_purchases.pop_front().unwrap();

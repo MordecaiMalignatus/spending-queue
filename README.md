@@ -64,14 +64,12 @@ Future improvements:
       purchase to omnifocus
 - [ ] Add subcommand that installs either a launchctl timer (OSX) or a systemd
       timer. Maybe even a crontab if we're feeling oldschool.
-- [ ] List: print with https://github.com/phsym/prettytable-rs
 
 Bugs:
 - [ ] `set-budget`: Fix panic when calling without args.
 - [ ] `buy`: Setting the price flag on invocation is useless because the link is
       opened when the command is invoked, so the price is seen too late to
       adjust. Change to a prompt after opening.
-  - [ ] Or, allow to open page without invoking purchase.
 - [ ] Make sure proration works correctly by writing a bunch of tests.
   - [ ] Write test that sets budget to $1/second in a day, then sleeps for one
         second, then check amount.
