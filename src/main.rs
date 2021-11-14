@@ -1,9 +1,11 @@
 #![warn(clippy::pedantic, clippy::all)]
+mod io;
 
 use ansi_term::Style;
 use chrono::prelude::*;
 use clap::{App, AppSettings, Arg};
 use fraction::prelude::*;
+use io::open_url;
 use prettytable::cell;
 use prettytable::format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR;
 use prettytable::row;
@@ -13,11 +15,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::env;
 use std::fs;
-use std::io::Error;
-use std::io::ErrorKind;
 use std::io::Result;
 use std::path::PathBuf;
-use std::process::Command;
+
+use crate::io::parse_float_from_stdin;
+use crate::io::read_stdin_line;
+use crate::io::yes_no_predicate;
 
 type M = GenericDecimal<u64, u8>;
 
@@ -143,7 +146,7 @@ fn parse_args() -> clap::ArgMatches<'static> {
         .get_matches()
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Item {
     name: String,
     amount: M,
@@ -151,13 +154,13 @@ struct Item {
     time_purchased: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Income {
     amount: f64,
     interval_in_days: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct State {
     income: Income,
     last_calculation: String,
@@ -169,7 +172,7 @@ struct State {
 fn buy_item(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Result<()> {
     let mut state = read_file();
 
-    match state.future_purchases.front_mut() {
+    match state.clone().future_purchases.front_mut() {
         Some(item) => {
             if peek {
                 open_url(&item.purchase_link)?;
@@ -178,26 +181,17 @@ fn buy_item(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Res
                     Some(x) => x,
                     None => item.amount,
                 };
-                let current_amount_string = format!("{:#.2}", state.current_amount - item.amount);
-                let item_amount_string = format!("{:#.2}", cost);
 
                 if !suppress_opening_url {
                     open_url(&item.purchase_link.clone())?;
                 }
 
-                let now = Local::now().to_rfc2822();
-                item.time_purchased = Some(now);
-
-                println!(
-                    "Bought {} for ${}. Remaining: ${}",
-                    Style::new().bold().paint(&item.name),
-                    Style::new().bold().paint(item_amount_string),
-                    Style::new().bold().paint(current_amount_string)
-                );
-
-                state.current_amount -= cost;
-                let last = state.future_purchases.pop_front().unwrap();
-                state.past_purchases.push_back(last);
+                if yes_no_predicate(&format!("Did the item cost {}?", cost)) {
+                    purchase(item, cost, &mut state);
+                } else {
+                    let cost = parse_float_from_stdin("What did it cost?").into();
+                    purchase(item, cost, &mut state);
+                }
             } else {
                 eprintln!("Can't buy item, not enough money accumulated.");
             }
@@ -208,6 +202,24 @@ fn buy_item(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Res
     }
 
     write_file(&state)
+}
+
+fn purchase(item: &mut Item, cost: M, state: &mut State) {
+    let now = Local::now().to_rfc2822();
+    item.time_purchased = Some(now);
+    let current_amount_string = format!("{:#.2}", state.current_amount - cost);
+    let item_amount_string = format!("{:#.2}", cost);
+
+    println!(
+        "Bought {} for ${}. Remaining: ${}",
+        Style::new().bold().paint(&item.name),
+        Style::new().bold().paint(item_amount_string),
+        Style::new().bold().paint(current_amount_string)
+    );
+
+    state.current_amount -= cost;
+    let last = state.future_purchases.pop_front().unwrap();
+    state.past_purchases.push_back(last);
 }
 
 /// Move current head of queue back 1-3 spots. This is essentially a "not right
@@ -253,24 +265,6 @@ fn delete_head_item() -> Result<()> {
     }
 }
 
-fn open_url(url: &Option<String>) -> Result<()> {
-    match url {
-        Some(purchase_url) => {
-            match Command::new("open").arg(purchase_url).output() {
-                Ok(_) => Ok(()), // Everything worked as intended.
-                Err(_) => Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    "Can't open purchase URL",
-                )),
-            }
-        }
-        None => {
-            eprintln!("Would open purchase link, none present.");
-            Ok(())
-        }
-    }
-}
-
 /// Print the list as it is right now.
 fn display_queue() {
     let state = read_file();
@@ -306,43 +300,10 @@ fn display_prior_purchases() {
     println!();
 }
 
-fn parse_float_from_stdin(prompt: &str) -> f64 {
-    let stdin = std::io::stdin();
-    let mut line = String::new();
-
-    loop {
-        println!("{}", prompt);
-        match stdin.read_line(&mut line) {
-            Ok(_) => {
-                line = line.trim().to_string();
-                match line.parse() {
-                    Ok(float) => {
-                        return float;
-                    }
-                    Err(e) => {
-                        eprintln!("Can't parse amount, try again: {}", e);
-                        line.clear();
-                    }
-                }
-            }
-            Err(e) => panic!("Can't read from stdin: {}", e),
-        }
-    }
-}
-
 fn add_to_purchase_queue(thing_to_add: String, prepend: bool) -> Result<()> {
-    let stdin = std::io::stdin();
     let parsed = parse_float_from_stdin("What does this cost?: ");
+    let purchase_url = read_stdin_line("Do you have a purchase URL? (Leave empty for no)");
 
-    println!("Do you have a purchase URL? (Leave empty for no)");
-    let mut purchase_url = String::new();
-    match stdin.read_line(&mut purchase_url) {
-        Ok(_bytes_read) => {}
-        Err(x) => {
-            panic!("Can't parse purchase url because {}, aborting...", x);
-        }
-    }
-    purchase_url = purchase_url.trim().to_string();
     let purchase_link = match purchase_url.as_ref() {
         "" => None,
         _ => Some(purchase_url),

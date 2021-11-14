@@ -67,9 +67,7 @@ Future improvements:
 
 Bugs:
 - [ ] `set-budget`: Fix panic when calling without args.
-- [ ] `buy`: Setting the price flag on invocation is useless because the link is
-      opened when the command is invoked, so the price is seen too late to
-      adjust. Change to a prompt after opening.
+- [ ] Purchasing does not set timestamp due to borrow from cloned state.
 - [ ] Make sure proration works correctly by writing a bunch of tests.
   - [ ] Write test that sets budget to $1/second in a day, then sleeps for one
         second, then check amount.
