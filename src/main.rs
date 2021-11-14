@@ -86,7 +86,7 @@ fn parse_args() -> clap::ArgMatches<'static> {
                         .short("a")
                         .long("amount")
                         .takes_value(true)
-                        .required(false),
+                        .required(true),
                 )
                 .arg(
                     Arg::with_name("interval")
@@ -95,7 +95,7 @@ fn parse_args() -> clap::ArgMatches<'static> {
                         .long("interval")
                         .takes_value(true)
                         .default_value("30")
-                        .required(false),
+                        .required(true),
                 ),
         )
         .subcommand(

@@ -57,16 +57,16 @@ Other than that:
 
 Future improvements:
 
-- [ ] Enable easily re-ordering the queue
 - [ ] Provide subcommand to set current amount available.
 - [ ] Add subcommand that prints the path to the statefile
 - [ ] Implement cron-based mode where crossing the purchase tqhreshold adds the
       purchase to omnifocus
+- [ ] Improve UX for setting budget, now that functions for interactive use are
+      available.
 - [ ] Add subcommand that installs either a launchctl timer (OSX) or a systemd
       timer. Maybe even a crontab if we're feeling oldschool.
 
 Bugs:
-- [ ] `set-budget`: Fix panic when calling without args.
 - [ ] Purchasing does not set timestamp due to borrow from cloned state.
 - [ ] Make sure proration works correctly by writing a bunch of tests.
   - [ ] Write test that sets budget to $1/second in a day, then sleeps for one
