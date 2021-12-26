@@ -121,7 +121,7 @@ fn parse_args() -> clap::ArgMatches<'static> {
                         .help("Set price explicitly if it no longer matches what's in the list")
                         .short("p")
                         .long("price")
-                        .takes_value(false)
+                        .takes_value(true)
                         .required(false),
                 ),
         )
@@ -174,23 +174,23 @@ fn buy_item(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Res
 
     match state.clone().future_purchases.front_mut() {
         Some(item) => {
+            let cost = match new_price {
+                Some(x) => x,
+                None => item.amount,
+            };
+
             if peek {
                 open_url(&item.purchase_link)?;
-            } else if item.amount < state.current_amount {
-                let cost = match new_price {
-                    Some(x) => x,
-                    None => item.amount,
-                };
-
+            } else if cost < state.current_amount {
                 if !suppress_opening_url {
                     open_url(&item.purchase_link.clone())?;
                 }
 
                 if yes_no_predicate(&format!("Did the item cost {}?", cost)) {
-                    purchase(item, cost, &mut state);
+                    purchase_next(cost, &mut state);
                 } else {
                     let cost = parse_float_from_stdin("What did it cost?").into();
-                    purchase(item, cost, &mut state);
+                    purchase_next(cost, &mut state);
                 }
             } else {
                 eprintln!("Can't buy item, not enough money accumulated.");
@@ -204,8 +204,10 @@ fn buy_item(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Res
     write_file(&state)
 }
 
-fn purchase(item: &mut Item, cost: M, state: &mut State) {
+fn purchase_next(cost: M, state: &mut State) {
     let now = Local::now().to_rfc2822();
+    let mut item = state.future_purchases.pop_front().unwrap();
+
     item.time_purchased = Some(now);
     let current_amount_string = format!("{:#.2}", state.current_amount - cost);
     let item_amount_string = format!("{:#.2}", cost);
@@ -218,8 +220,7 @@ fn purchase(item: &mut Item, cost: M, state: &mut State) {
     );
 
     state.current_amount -= cost;
-    let last = state.future_purchases.pop_front().unwrap();
-    state.past_purchases.push_back(last);
+    state.past_purchases.push_back(item);
 }
 
 /// Move current head of queue back 1-3 spots. This is essentially a "not right
@@ -302,7 +303,7 @@ fn display_prior_purchases() {
 
 fn add_to_purchase_queue(thing_to_add: String, prepend: bool) -> Result<()> {
     let parsed = parse_float_from_stdin("What does this cost?: ");
-    let purchase_url = read_stdin_line("Do you have a purchase URL? (Leave empty for no)");
+    let purchase_url = read_stdin_line("Do you have a purchase_next URL? (Leave empty for no)");
 
     let purchase_link = match purchase_url.as_ref() {
         "" => None,

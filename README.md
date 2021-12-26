@@ -67,7 +67,6 @@ Future improvements:
       timer. Maybe even a crontab if we're feeling oldschool.
 
 Bugs:
-- [ ] Purchasing does not set timestamp due to borrow from cloned state.
 - [ ] Make sure proration works correctly by writing a bunch of tests.
   - [ ] Write test that sets budget to $1/second in a day, then sleeps for one
         second, then check amount.
