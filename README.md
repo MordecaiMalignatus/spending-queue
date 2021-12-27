@@ -67,6 +67,9 @@ Future improvements:
       timer. Maybe even a crontab if we're feeling oldschool.
 
 Bugs:
+- [ ] `sq buy`: If the price changes, the correct amount is subtracted from the
+      budget, but the item is not mutated, so then `sq past` is wrong. The price
+      needs to be updated if overridden at purchase.
 - [ ] Make sure proration works correctly by writing a bunch of tests.
   - [ ] Write test that sets budget to $1/second in a day, then sleeps for one
         second, then check amount.

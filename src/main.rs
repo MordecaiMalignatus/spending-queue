@@ -303,7 +303,7 @@ fn display_prior_purchases() {
 
 fn add_to_purchase_queue(thing_to_add: String, prepend: bool) -> Result<()> {
     let parsed = parse_float_from_stdin("What does this cost?: ");
-    let purchase_url = read_stdin_line("Do you have a purchase_next URL? (Leave empty for no)");
+    let purchase_url = read_stdin_line("Do you have a purchase URL? (Leave empty for no)");
 
     let purchase_link = match purchase_url.as_ref() {
         "" => None,
