@@ -53,27 +53,6 @@ Other than that:
 1. `cargo build --release`
 2. `mv ./target/release/sq /somehere/on/$PATH`
 
-## Things to do
-
-Future improvements:
-
-- [ ] Provide subcommand to set current amount available.
-- [ ] Add subcommand that prints the path to the statefile
-- [ ] Implement cron-based mode where crossing the purchase tqhreshold adds the
-      purchase to omnifocus
-- [ ] Improve UX for setting budget, now that functions for interactive use are
-      available.
-- [ ] Add subcommand that installs either a launchctl timer (OSX) or a systemd
-      timer. Maybe even a crontab if we're feeling oldschool.
-
-Bugs:
-- [ ] `sq buy`: If the price changes, the correct amount is subtracted from the
-      budget, but the item is not mutated, so then `sq past` is wrong. The price
-      needs to be updated if overridden at purchase.
-- [ ] Make sure proration works correctly by writing a bunch of tests.
-  - [ ] Write test that sets budget to $1/second in a day, then sleeps for one
-        second, then check amount.
-
 ## License
 
 Should this be ever needed, the project is explicitly licensed under the
