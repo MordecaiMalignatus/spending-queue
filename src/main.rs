@@ -1,11 +1,11 @@
 #![warn(clippy::pedantic, clippy::all)]
 mod io;
 
+use ansi_term::Color;
 use ansi_term::Style;
 use chrono::prelude::*;
 use clap::{App, AppSettings, Arg};
 use fraction::prelude::*;
-use io::open_url;
 use prettytable::cell;
 use prettytable::format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR;
 use prettytable::row;
@@ -15,9 +15,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::env;
 use std::fs;
+use std::io::Error;
+use std::io::ErrorKind;
 use std::io::Result;
 use std::path::PathBuf;
 
+use crate::io::open_url;
 use crate::io::parse_float_from_stdin;
 use crate::io::read_stdin_line;
 use crate::io::yes_no_predicate;
@@ -26,7 +29,7 @@ type M = GenericDecimal<u64, u8>;
 
 fn main() -> Result<()> {
     let args = parse_args();
-    match args.subcommand() {
+    let res = match args.subcommand() {
         ("budget", Some(m)) => {
             // This is a bug waiting to happen, I think. Needs to be converted
             // to pass Options to `update_budget`.
@@ -41,21 +44,29 @@ fn main() -> Result<()> {
                 .parse()
                 .expect("can't parse interval");
 
-            update_budget(income, interval)?;
+            update_budget(income, interval)
         }
         ("buy", Some(m)) => {
-            let no_open = m.is_present("no-open");
+            let no_open = m.is_present("no_open");
             let peek = m.is_present("peek");
-            let new_price = m
-                .value_of("new_price")
-                .map(|s| s.parse::<f64>().expect("Can't parse specified new price"))
-                .map(M::from);
-            buy_item(no_open, new_price, peek)?;
+            match m.value_of("new_price") {
+                Some(p) => {
+                    match p.parse::<f64>() {
+                        Ok(new_price) => {
+                            let price: M = new_price.into();
+                            buy_item(no_open, Some(price), peek)},
+                        Err(_) => Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            "Can't parse specified price to float.\n(Did you accidentally specify `-peek` instead of `--peek`?)")),
+                    }
+                },
+                None => buy_item(no_open, None, peek),
+            }
         }
         ("list", _) => display_queue(),
-        ("delete", _) => delete_head_item()?,
+        ("delete", _) => delete_head_item(),
         ("past", _) => display_prior_purchases(),
-        ("bump", _) => bump_head()?,
+        ("bump", _) => bump_head(),
         ("add", Some(m)) => {
             let prepend = m.is_present("prepend");
             let to_add = m
@@ -63,12 +74,19 @@ fn main() -> Result<()> {
                 .unwrap()
                 .collect::<Vec<&str>>()
                 .join(" ");
-            add_to_purchase_queue(to_add, prepend)?;
+            add_to_purchase_queue(to_add, prepend)
         }
-        _ => display_status()?,
-    }
+        _ => display_status(),
+    };
 
-    Ok(())
+    match res {
+        Err(e) => {
+            let f = Style::new().bold().fg(Color::Red);
+            eprintln!("{}", f.paint(e.to_string()));
+            Err(e)
+        }
+        Ok(_) => Ok(()),
+    }
 }
 
 fn parse_args() -> clap::ArgMatches<'static> {
@@ -102,10 +120,10 @@ fn parse_args() -> clap::ArgMatches<'static> {
             App::new("buy")
                 .about("Marks the top item as bought if it can be.")
                 .arg(
-                    Arg::with_name("no-open")
+                    Arg::with_name("no_open")
                         .help("Suppress opening purchase URL, if present.")
                         .short("n")
-                        .long("no-open")
+                        .long("no_open")
                         .takes_value(false)
                         .required(false),
                 )
@@ -266,8 +284,11 @@ fn delete_head_item() -> Result<()> {
     }
 }
 
+// We return a result to make main have a uniform return type for subcommands,
+// even if it is not needed here.
+#[allow(clippy::unnecessary_wraps)]
 /// Print the list as it is right now.
-fn display_queue() {
+fn display_queue() -> Result<()> {
     let state = read_file();
     let mut table = Table::new();
     table.set_titles(row!("Name", "Cost"));
@@ -283,10 +304,14 @@ fn display_queue() {
 
     table.printstd();
     println!();
+    Ok(())
 }
 
+// We return a result to make main have a uniform return type for subcommands,
+// even if it is not needed here.
+#[allow(clippy::unnecessary_wraps)]
 /// Print list of past purchases, the things already bought.
-fn display_prior_purchases() {
+fn display_prior_purchases() -> Result<()> {
     let state = read_file();
     let mut table = Table::new();
     table.set_titles(row!("Name", "Cost", "Purchased"));
@@ -299,6 +324,7 @@ fn display_prior_purchases() {
 
     table.printstd();
     println!();
+    Ok(())
 }
 
 fn add_to_purchase_queue(thing_to_add: String, prepend: bool) -> Result<()> {
