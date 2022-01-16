@@ -27,7 +27,7 @@ use crate::io::yes_no_predicate;
 
 type M = GenericDecimal<u64, u8>;
 
-fn main() -> Result<()> {
+fn main() {
     let args = parse_args();
     let res = match args.subcommand() {
         ("budget", Some(m)) => {
@@ -79,13 +79,9 @@ fn main() -> Result<()> {
         _ => display_status(),
     };
 
-    match res {
-        Err(e) => {
+    if let Err(e) =  res {
             let f = Style::new().bold().fg(Color::Red);
             eprintln!("{}", f.paint(e.to_string()));
-            Err(e)
-        }
-        Ok(_) => Ok(()),
     }
 }
 
