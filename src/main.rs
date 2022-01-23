@@ -223,6 +223,7 @@ fn purchase_next(cost: M, state: &mut State) {
     let mut item = state.future_purchases.pop_front().unwrap();
 
     item.time_purchased = Some(now);
+    item.amount = cost;
     let current_amount_string = format!("{:#.2}", state.current_amount - cost);
     let item_amount_string = format!("{:#.2}", cost);
 
