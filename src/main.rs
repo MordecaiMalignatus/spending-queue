@@ -67,6 +67,8 @@ fn main() {
         ("delete", _) => delete_head_item(),
         ("past", _) => display_prior_purchases(),
         ("bump", _) => bump_head(),
+        ("pause", _) => pause_accumulation(),
+        ("unpause", _) => unpause_accumulation(),
         ("add", Some(m)) => {
             let prepend = m.is_present("prepend");
             let to_add = m
@@ -79,9 +81,9 @@ fn main() {
         _ => display_status(),
     };
 
-    if let Err(e) =  res {
-            let f = Style::new().bold().fg(Color::Red);
-            eprintln!("{}", f.paint(e.to_string()));
+    if let Err(e) = res {
+        let f = Style::new().bold().fg(Color::Red);
+        eprintln!("{}", f.paint(e.to_string()));
     }
 }
 
@@ -143,6 +145,8 @@ fn parse_args() -> clap::ArgMatches<'static> {
         .subcommand(App::new("list").about("Print items remaining to be bought."))
         .subcommand(App::new("past").about("Print items that were already marked as bought."))
         .subcommand(App::new("bump").about("Move current head of queue back 1-3 spots."))
+        .subcommand(App::new("pause").about("Pause accumulation of the queue."))
+        .subcommand(App::new("unpause").about("Unpause accumulation of the queue."))
         .subcommand(
             App::new("add")
                 .about("Add an item to the queue")
@@ -181,6 +185,7 @@ struct State {
     current_amount: M,
     future_purchases: VecDeque<Item>,
     past_purchases: VecDeque<Item>,
+    paused: Option<bool>,
 }
 
 fn buy_item(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Result<()> {
@@ -267,6 +272,20 @@ fn bump_head() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn pause_accumulation() -> Result<()> {
+    let mut state = read_file();
+    state.paused = Some(true);
+    println!("Paused accumulation. Run `sq unpause` to resume.");
+    write_file(&state)
+}
+
+fn unpause_accumulation() -> Result<()> {
+    let mut state = read_file();
+    state.paused = Some(false);
+    println!("Unpaused accumulation, welcome back.");
+    write_file(&state)
 }
 
 fn delete_head_item() -> Result<()> {
@@ -356,38 +375,59 @@ fn display_status() -> Result<()> {
     let mut state = read_file();
     let bold = Style::new().bold();
 
-    let (new_timestamp, new_amount) = calculate_current_amount(&state);
-    state.last_calculation = new_timestamp.to_rfc2822();
-    state.current_amount = new_amount;
+    update_accumulation(&mut state);
 
-    let available_amount = format!("{:#.2}", state.current_amount);
-    println!(
-        "Currently available free budget: ${}",
-        Style::new().bold().paint(&available_amount)
-    );
+    match state.paused {
+        Some(true) => {
+            println!(
+                "{}",
+                Style::new()
+                    .italic()
+                    .bold()
+                    .paint("SQ is currently paused. To unpause, run `sq unpause`.")
+            );
+            write_file(&state)
+        }
+        Some(false) | None => {
+            let available_amount = format!("{:#.2}", state.current_amount);
+            println!(
+                "Currently available free budget: ${}",
+                Style::new().bold().paint(&available_amount)
+            );
 
-    match state.future_purchases.front() {
-        Some(item) => {
-            let amount = format!("{:#.2}", item.amount);
-            let name = match &item.purchase_link {
-                Some(_) => Style::new().bold().italic().paint(item.name.clone()),
-                None => bold.paint(item.name.clone()),
+            match state.future_purchases.front() {
+                Some(item) => {
+                    let amount = format!("{:#.2}", item.amount);
+                    let name = match &item.purchase_link {
+                        Some(_) => Style::new().bold().italic().paint(item.name.clone()),
+                        None => bold.paint(item.name.clone()),
+                    };
+
+                    println!(
+                        "The next item in the queue is {} for ${}",
+                        name,
+                        bold.paint(&amount)
+                    );
+                    if state.current_amount >= item.amount {
+                        println!("{}", bold.paint("*** NEXT ITEM PURCHASEABLE ***"));
+                    }
+                }
+                None => println!("There's no next item in the queue, add one!"),
             };
 
-            println!(
-                "The next item in the queue is {} for ${}",
-                name,
-                bold.paint(&amount)
-            );
-            if state.current_amount >= item.amount {
-                println!("{}", bold.paint("*** NEXT ITEM PURCHASEABLE ***"));
-            }
+            println!();
+            write_file(&state)
         }
-        None => println!("There's no next item in the queue, add one!"),
-    };
+    }
+}
 
-    println!();
-    write_file(&state)
+fn update_accumulation(state: &mut State) {
+    let (new_timestamp, new_amount) = calculate_current_amount(state);
+    state.last_calculation = new_timestamp.to_rfc2822();
+    state.current_amount = match state.paused {
+        Some(true) => state.current_amount,
+        Some(false) | None => new_amount,
+    };
 }
 
 fn calculate_current_amount(state: &State) -> (DateTime<Local>, M) {
@@ -454,6 +494,7 @@ fn read_file() -> State {
             last_calculation: Local::now().to_rfc2822(),
             future_purchases: VecDeque::new(),
             past_purchases: VecDeque::new(),
+            paused: Some(false),
         }
     }
 }
