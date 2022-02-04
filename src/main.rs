@@ -44,7 +44,7 @@ fn main() {
                 .parse()
                 .expect("can't parse interval");
 
-            update_budget(income, interval)
+            cmd_budget(income, interval)
         }
         ("buy", Some(m)) => {
             let no_open = m.is_present("no_open");
@@ -54,21 +54,21 @@ fn main() {
                     match p.parse::<f64>() {
                         Ok(new_price) => {
                             let price: M = new_price.into();
-                            buy_item(no_open, Some(price), peek)},
+                            cmd_buy(no_open, Some(price), peek)},
                         Err(_) => Err(Error::new(
                             ErrorKind::InvalidInput,
                             "Can't parse specified price to float.\n(Did you accidentally specify `-peek` instead of `--peek`?)")),
                     }
                 },
-                None => buy_item(no_open, None, peek),
+                None => cmd_buy(no_open, None, peek),
             }
         }
-        ("list", _) => display_queue(),
-        ("delete", _) => delete_head_item(),
-        ("past", _) => display_prior_purchases(),
-        ("bump", _) => bump_head(),
-        ("pause", _) => pause_accumulation(),
-        ("unpause", _) => unpause_accumulation(),
+        ("list", _) => cmd_list(),
+        ("delete", _) => cmd_delete(),
+        ("past", _) => cmd_past(),
+        ("bump", _) => cmd_bump(),
+        ("pause", _) => cmd_pause(),
+        ("unpause", _) => cmd_unpause(),
         ("add", Some(m)) => {
             let prepend = m.is_present("prepend");
             let to_add = m
@@ -76,9 +76,9 @@ fn main() {
                 .unwrap()
                 .collect::<Vec<&str>>()
                 .join(" ");
-            add_to_purchase_queue(to_add, prepend)
+            cmd_add(to_add, prepend)
         }
-        _ => display_status(),
+        _ => cmd_status(),
     };
 
     if let Err(e) = res {
@@ -188,7 +188,7 @@ struct State {
     paused: Option<bool>,
 }
 
-fn buy_item(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Result<()> {
+fn cmd_buy(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Result<()> {
     let mut state = read_file();
 
     match state.clone().future_purchases.front_mut() {
@@ -245,7 +245,7 @@ fn purchase_next(cost: M, state: &mut State) {
 
 /// Move current head of queue back 1-3 spots. This is essentially a "not right
 /// now" button for reordering the queue.
-fn bump_head() -> Result<()> {
+fn cmd_bump() -> Result<()> {
     let mut state = read_file();
     let bold = Style::new().bold();
 
@@ -267,33 +267,33 @@ fn bump_head() -> Result<()> {
                 bold.paint(state.future_purchases.front().unwrap().name.clone())
             );
             write_file(&state)?;
-            display_status()?;
+            cmd_status()?;
         }
     }
 
     Ok(())
 }
 
-fn pause_accumulation() -> Result<()> {
+fn cmd_pause() -> Result<()> {
     let mut state = read_file();
     state.paused = Some(true);
     println!("Paused accumulation. Run `sq unpause` to resume.");
     write_file(&state)
 }
 
-fn unpause_accumulation() -> Result<()> {
+fn cmd_unpause() -> Result<()> {
     let mut state = read_file();
     state.paused = Some(false);
     println!("Unpaused accumulation, welcome back.");
     write_file(&state)
 }
 
-fn delete_head_item() -> Result<()> {
+fn cmd_delete() -> Result<()> {
     let mut state = read_file();
     if let Some(item) = state.future_purchases.pop_front() {
         println!("Deleted item at head of queue: {}", item.name);
         write_file(&state)?;
-        display_status()
+        cmd_status()
     } else {
         eprintln!("No item in queue, can't remove any.");
         Ok(())
@@ -304,7 +304,7 @@ fn delete_head_item() -> Result<()> {
 // even if it is not needed here.
 #[allow(clippy::unnecessary_wraps)]
 /// Print the list as it is right now.
-fn display_queue() -> Result<()> {
+fn cmd_list() -> Result<()> {
     let state = read_file();
     let mut table = Table::new();
     table.set_titles(row!("Name", "Cost"));
@@ -327,7 +327,7 @@ fn display_queue() -> Result<()> {
 // even if it is not needed here.
 #[allow(clippy::unnecessary_wraps)]
 /// Print list of past purchases, the things already bought.
-fn display_prior_purchases() -> Result<()> {
+fn cmd_past() -> Result<()> {
     let state = read_file();
     let mut table = Table::new();
     table.set_titles(row!("Name", "Cost", "Purchased"));
@@ -343,7 +343,7 @@ fn display_prior_purchases() -> Result<()> {
     Ok(())
 }
 
-fn add_to_purchase_queue(thing_to_add: String, prepend: bool) -> Result<()> {
+fn cmd_add(thing_to_add: String, prepend: bool) -> Result<()> {
     let parsed = parse_float_from_stdin("What does this cost?: ");
     let purchase_url = read_stdin_line("Do you have a purchase URL? (Leave empty for no)");
 
@@ -371,7 +371,7 @@ fn add_to_purchase_queue(thing_to_add: String, prepend: bool) -> Result<()> {
     write_file(&state)
 }
 
-fn display_status() -> Result<()> {
+fn cmd_status() -> Result<()> {
     let mut state = read_file();
     let bold = Style::new().bold();
 
@@ -450,7 +450,7 @@ fn calculate_current_amount(state: &State) -> (DateTime<Local>, M) {
     (now, subtotal)
 }
 
-fn update_budget(amount: f64, interval: u64) -> Result<()> {
+fn cmd_budget(amount: f64, interval: u64) -> Result<()> {
     let mut state = read_file();
 
     println!("Updated income to ${:.2} per {} days.", amount, interval);
