@@ -49,18 +49,19 @@ fn main() {
         ("buy", Some(m)) => {
             let no_open = m.is_present("no_open");
             let peek = m.is_present("peek");
+            let force = m.is_present("force");
             match m.value_of("new_price") {
                 Some(p) => {
                     match p.parse::<f64>() {
                         Ok(new_price) => {
                             let price: M = new_price.into();
-                            cmd_buy(no_open, Some(price), peek)},
+                            cmd_buy(no_open, Some(price), peek, force)},
                         Err(_) => Err(Error::new(
                             ErrorKind::InvalidInput,
                             "Can't parse specified price to float.\n(Did you accidentally specify `-peek` instead of `--peek`?)")),
                     }
                 },
-                None => cmd_buy(no_open, None, peek),
+                None => cmd_buy(no_open, None, peek, force),
             }
         }
         ("list", _) => cmd_list(),
@@ -139,7 +140,15 @@ fn parse_args() -> clap::ArgMatches<'static> {
                         .long("price")
                         .takes_value(true)
                         .required(false),
-                ),
+                )
+                .arg(
+                    Arg::with_name("force")
+                        .help("Force purchase despite not enough budget being accrued. This will push the balance into the negative.")
+                        .short("f")
+                        .long("force")
+                        .takes_value(false)
+                        .required(false)
+                )
         )
         .subcommand(App::new("delete").about("Delete item at head at queue."))
         .subcommand(App::new("list").about("Print items remaining to be bought."))
@@ -188,7 +197,7 @@ struct State {
     paused: Option<bool>,
 }
 
-fn cmd_buy(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Result<()> {
+fn cmd_buy(suppress_opening_url: bool, new_price: Option<M>, peek: bool, force: bool) -> Result<()> {
     let mut state = read_file();
 
     match state.clone().future_purchases.front_mut() {
@@ -200,7 +209,7 @@ fn cmd_buy(suppress_opening_url: bool, new_price: Option<M>, peek: bool) -> Resu
 
             if peek {
                 open_url(&item.purchase_link)?;
-            } else if cost < state.current_amount {
+            } else if cost < state.current_amount || force {
                 if !suppress_opening_url {
                     open_url(&item.purchase_link.clone())?;
                 }
@@ -520,6 +529,7 @@ mod test {
             current_amount: M::from(0),
             future_purchases: VecDeque::new(),
             past_purchases: VecDeque::new(),
+            paused: Some(false)
         };
         let (_last_update, balance) = calculate_current_amount(&demo_state);
 
