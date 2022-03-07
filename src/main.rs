@@ -1,18 +1,17 @@
 #![warn(clippy::pedantic, clippy::all)]
 mod io;
+mod legacy;
+mod types;
 
 use ansi_term::Color;
 use ansi_term::Style;
 use chrono::prelude::*;
 use clap::{App, AppSettings, Arg};
-use fraction::prelude::*;
 use prettytable::cell;
 use prettytable::format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR;
 use prettytable::row;
 use prettytable::Table;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
 use std::env;
 use std::fs;
 use std::io::Error;
@@ -20,12 +19,16 @@ use std::io::ErrorKind;
 use std::io::Result;
 use std::path::PathBuf;
 
+use crate::types::Income;
+use crate::types::Item;
+use crate::types::Queue;
+use crate::types::State;
+use crate::types::M;
+
 use crate::io::open_url;
 use crate::io::parse_float_from_stdin;
 use crate::io::read_stdin_line;
 use crate::io::yes_no_predicate;
-
-type M = GenericDecimal<u64, u8>;
 
 fn main() {
     let args = parse_args();
@@ -173,34 +176,15 @@ fn parse_args() -> clap::ArgMatches<'static> {
         .get_matches()
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Item {
-    name: String,
-    amount: M,
-    purchase_link: Option<String>,
-    time_purchased: Option<String>,
-}
+fn cmd_buy(
+    suppress_opening_url: bool,
+    new_price: Option<M>,
+    peek: bool,
+    force: bool,
+) -> Result<()> {
+    let mut q = currently_selected_queue();
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Income {
-    amount: f64,
-    interval_in_days: u64,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct State {
-    income: Income,
-    last_calculation: String,
-    current_amount: M,
-    future_purchases: VecDeque<Item>,
-    past_purchases: VecDeque<Item>,
-    paused: Option<bool>,
-}
-
-fn cmd_buy(suppress_opening_url: bool, new_price: Option<M>, peek: bool, force: bool) -> Result<()> {
-    let mut state = read_file();
-
-    match state.clone().future_purchases.front_mut() {
+    match q.future_purchases.front_mut() {
         Some(item) => {
             let cost = match new_price {
                 Some(x) => x,
@@ -209,16 +193,16 @@ fn cmd_buy(suppress_opening_url: bool, new_price: Option<M>, peek: bool, force: 
 
             if peek {
                 open_url(&item.purchase_link)?;
-            } else if cost < state.current_amount || force {
+            } else if cost < q.current_balance || force {
                 if !suppress_opening_url {
                     open_url(&item.purchase_link.clone())?;
                 }
 
                 if yes_no_predicate(&format!("Did the item cost {}?", cost)) {
-                    purchase_next(cost, &mut state);
+                    purchase_next(cost, &mut q);
                 } else {
                     let cost = parse_float_from_stdin("What did it cost?").into();
-                    purchase_next(cost, &mut state);
+                    purchase_next(cost, &mut q);
                 }
             } else {
                 eprintln!("Can't buy item, not enough money accumulated.");
@@ -229,16 +213,16 @@ fn cmd_buy(suppress_opening_url: bool, new_price: Option<M>, peek: bool, force: 
         }
     }
 
-    write_file(&state)
+    write_current_queue(q)
 }
 
-fn purchase_next(cost: M, state: &mut State) {
+fn purchase_next(cost: M, queue: &mut Queue) {
     let now = Local::now().to_rfc2822();
-    let mut item = state.future_purchases.pop_front().unwrap();
+    let mut item = queue.future_purchases.pop_front().unwrap();
 
     item.time_purchased = Some(now);
     item.amount = cost;
-    let current_amount_string = format!("{:#.2}", state.current_amount - cost);
+    let current_amount_string = format!("{:#.2}", queue.current_balance - cost);
     let item_amount_string = format!("{:#.2}", cost);
 
     println!(
@@ -248,34 +232,34 @@ fn purchase_next(cost: M, state: &mut State) {
         Style::new().bold().paint(current_amount_string)
     );
 
-    state.current_amount -= cost;
-    state.past_purchases.push_back(item);
+    queue.current_balance -= cost;
+    queue.past_purchases.push_back(item);
 }
 
 /// Move current head of queue back 1-3 spots. This is essentially a "not right
 /// now" button for reordering the queue.
 fn cmd_bump() -> Result<()> {
-    let mut state = read_file();
+    let mut queue = currently_selected_queue();
     let bold = Style::new().bold();
 
-    match state.future_purchases.len() {
+    match queue.future_purchases.len() {
         0 => eprintln!("No items in the queue, can't bump anything."),
         1 => eprintln!("One item in the queue, can't bump anything."),
         _ => {
-            let head = state.future_purchases.pop_front().expect(
+            let head = queue.future_purchases.pop_front().expect(
                 "We already checked for queue length, thus must succeed in any sane universe",
             );
             let head_name = head.name.clone();
-            let upper_bound = state.future_purchases.len() - 1;
+            let upper_bound = queue.future_purchases.len() - 1;
             let new_position = rand::thread_rng().gen_range(1..upper_bound);
-            state.future_purchases.insert(new_position, head);
+            queue.future_purchases.insert(new_position, head);
             println!(
                 "Moved {} from head of queue to position {}. Next item is now {}.",
                 bold.paint(&head_name),
                 bold.paint((new_position + 1).to_string()),
-                bold.paint(state.future_purchases.front().unwrap().name.clone())
+                bold.paint(queue.future_purchases.front().unwrap().name.clone())
             );
-            write_file(&state)?;
+            write_current_queue(queue)?;
             cmd_status()?;
         }
     }
@@ -284,24 +268,24 @@ fn cmd_bump() -> Result<()> {
 }
 
 fn cmd_pause() -> Result<()> {
-    let mut state = read_file();
-    state.paused = Some(true);
+    let mut queue = currently_selected_queue();
+    queue.paused = true;
     println!("Paused accumulation. Run `sq unpause` to resume.");
-    write_file(&state)
+    write_current_queue(queue)
 }
 
 fn cmd_unpause() -> Result<()> {
-    let mut state = read_file();
-    state.paused = Some(false);
+    let mut queue = currently_selected_queue();
+    queue.paused = false;
     println!("Unpaused accumulation, welcome back.");
-    write_file(&state)
+    write_current_queue(queue)
 }
 
 fn cmd_delete() -> Result<()> {
-    let mut state = read_file();
-    if let Some(item) = state.future_purchases.pop_front() {
+    let mut queue = currently_selected_queue();
+    if let Some(item) = queue.future_purchases.pop_front() {
         println!("Deleted item at head of queue: {}", item.name);
-        write_file(&state)?;
+        write_current_queue(queue)?;
         cmd_status()
     } else {
         eprintln!("No item in queue, can't remove any.");
@@ -314,11 +298,11 @@ fn cmd_delete() -> Result<()> {
 #[allow(clippy::unnecessary_wraps)]
 /// Print the list as it is right now.
 fn cmd_list() -> Result<()> {
-    let state = read_file();
+    let queue = currently_selected_queue();
     let mut table = Table::new();
     table.set_titles(row!("Name", "Cost"));
     table.set_format(*FORMAT_NO_BORDER_LINE_SEPARATOR);
-    state.future_purchases.iter().for_each(|item| {
+    queue.future_purchases.iter().for_each(|item| {
         let cost = format!("${:#.2}", item.amount);
         if item.purchase_link.is_some() {
             table.add_row(row!(bi->item.name, cost));
@@ -337,11 +321,12 @@ fn cmd_list() -> Result<()> {
 #[allow(clippy::unnecessary_wraps)]
 /// Print list of past purchases, the things already bought.
 fn cmd_past() -> Result<()> {
-    let state = read_file();
+    let queue = currently_selected_queue();
+
     let mut table = Table::new();
     table.set_titles(row!("Name", "Cost", "Purchased"));
     table.set_format(*FORMAT_NO_BORDER_LINE_SEPARATOR);
-    state.past_purchases.iter().for_each(|item| {
+    queue.past_purchases.iter().for_each(|item| {
         let cost = format!("${:#.2}", item.amount);
         let ts = item.time_purchased.clone().unwrap_or_default();
         table.add_row(row!(b->item.name, cost, ts));
@@ -363,7 +348,7 @@ fn cmd_add(thing_to_add: String, prepend: bool) -> Result<()> {
 
     let amount = format!("{:#.2}", M::from(parsed));
     println!("Adding \"{}\" for ${} to the list.", &thing_to_add, amount);
-    let mut state = read_file();
+    let mut queue = currently_selected_queue();
     let item = Item {
         name: thing_to_add,
         amount: M::from(parsed),
@@ -372,83 +357,82 @@ fn cmd_add(thing_to_add: String, prepend: bool) -> Result<()> {
     };
 
     if prepend {
-        state.future_purchases.push_front(item);
+        queue.future_purchases.push_front(item);
     } else {
-        state.future_purchases.push_back(item);
+        queue.future_purchases.push_back(item);
     }
 
-    write_file(&state)
+    write_current_queue(queue)
 }
 
 fn cmd_status() -> Result<()> {
-    let mut state = read_file();
+    let state = read_file();
     let bold = Style::new().bold();
 
-    update_accumulation(&mut state);
+    if state.globally_paused {
+        println!(
+            "{}",
+            Style::new()
+                .italic()
+                .bold()
+                .paint("SQ is currently paused. To unpause, run `sq unpause`.")
+        );
+        Ok(())
+    } else {
+        let mut queue = currently_selected_queue();
+        update_accumulation(&mut queue);
 
-    match state.paused {
-        Some(true) => {
-            println!(
-                "{}",
-                Style::new()
-                    .italic()
-                    .bold()
-                    .paint("SQ is currently paused. To unpause, run `sq unpause`.")
-            );
-            write_file(&state)
-        }
-        Some(false) | None => {
-            let available_amount = format!("{:#.2}", state.current_amount);
-            println!(
-                "Currently available free budget: ${}",
-                Style::new().bold().paint(&available_amount)
-            );
+        let available_amount = format!("{:#.2}", queue.current_balance);
+        println!(
+            "Currently available free budget: ${}",
+            Style::new().bold().paint(&available_amount)
+        );
 
-            match state.future_purchases.front() {
-                Some(item) => {
-                    let amount = format!("{:#.2}", item.amount);
-                    let name = match &item.purchase_link {
-                        Some(_) => Style::new().bold().italic().paint(item.name.clone()),
-                        None => bold.paint(item.name.clone()),
-                    };
+        match queue.future_purchases.front() {
+            Some(item) => {
+                let amount = format!("{:#.2}", item.amount);
+                let name = match &item.purchase_link {
+                    Some(_) => Style::new().bold().italic().paint(item.name.clone()),
+                    None => bold.paint(item.name.clone()),
+                };
 
-                    println!(
-                        "The next item in the queue is {} for ${}",
-                        name,
-                        bold.paint(&amount)
-                    );
-                    if state.current_amount >= item.amount {
-                        println!("{}", bold.paint("*** NEXT ITEM PURCHASEABLE ***"));
-                    }
+                println!(
+                    "The next item in the queue is {} for ${}",
+                    name,
+                    bold.paint(&amount)
+                );
+                if queue.current_balance >= item.amount {
+                    println!("{}", bold.paint("*** NEXT ITEM PURCHASEABLE ***"));
                 }
-                None => println!("There's no next item in the queue, add one!"),
-            };
+            }
+            None => println!("There's no next item in the queue, add one!"),
+        };
 
-            println!();
-            write_file(&state)
-        }
+        println!();
+        write_file(&state)
     }
 }
 
-fn update_accumulation(state: &mut State) {
-    let (new_timestamp, new_amount) = calculate_current_amount(state);
-    state.last_calculation = new_timestamp.to_rfc2822();
-    state.current_amount = match state.paused {
-        Some(true) => state.current_amount,
-        Some(false) | None => new_amount,
+fn update_accumulation(queue: &mut Queue) {
+    let (new_timestamp, new_amount) = calculate_current_amount(queue);
+    queue.last_calculation = new_timestamp.to_rfc2822();
+    queue.current_balance = if queue.paused {
+        queue.current_balance
+    } else {
+        new_amount
     };
 }
 
-fn calculate_current_amount(state: &State) -> (DateTime<Local>, M) {
+fn calculate_current_amount(queue: &Queue) -> (DateTime<Local>, M) {
     let now = Local::now();
-    let then = DateTime::parse_from_rfc2822(&state.last_calculation)
+    let then = DateTime::parse_from_rfc2822(&queue.last_calculation)
         .expect("Can't parse date from last calculation, check the statefile");
     let time_between = now.signed_duration_since(then).num_seconds();
     let time_between = M::from(time_between);
-    let income = M::from(state.income.amount);
+    let income = M::from(queue.income.amount);
 
-    let interval = M::from(state.income.interval_in_days as u64);
-    let current_balance = state.current_amount;
+    let interval = M::from(queue.income.interval_in_days as u64);
+    let current_balance = queue.current_balance;
 
     let seconds_in_interval = M::from(24_u64 * 60 * 60) * interval;
     let money_per_second = income / seconds_in_interval;
@@ -460,17 +444,18 @@ fn calculate_current_amount(state: &State) -> (DateTime<Local>, M) {
 }
 
 fn cmd_budget(amount: f64, interval: u64) -> Result<()> {
-    let mut state = read_file();
+    let mut queue = currently_selected_queue();
 
     println!("Updated income to ${:.2} per {} days.", amount, interval);
-    state.income = Income {
+    queue.income = Income {
         amount,
         interval_in_days: interval,
     };
-    write_file(&state)
+    write_current_queue(queue)
 }
 
-fn file() -> PathBuf {
+#[must_use]
+pub fn config_file_path() -> PathBuf {
     let home = env::var("HOME").expect("$HOME is not set, aborting.");
     let mut home = PathBuf::from(home);
     home.push(".config");
@@ -481,58 +466,59 @@ fn file() -> PathBuf {
 }
 
 fn read_file() -> State {
-    let statepath = file();
-
+    let statepath = config_file_path();
     if !statepath.exists() {
-        let mut t = file();
+        let mut t = config_file_path();
         let _ = t.pop();
         std::fs::create_dir_all(t).expect("can't create config dir");
     }
 
-    if let Ok(string) = fs::read_to_string(statepath) {
-        serde_json::from_str(&string).expect("Can't parse statefile, check the formatting")
-    } else {
-        eprintln!("Can't read statefile, continuing with default");
-        eprintln!("You're going to want to adjust the income, currently $1/mo.");
-        State {
-            income: Income {
-                amount: 1.0,
-                interval_in_days: 30,
-            },
-            current_amount: M::from(0),
-            last_calculation: Local::now().to_rfc2822(),
-            future_purchases: VecDeque::new(),
-            past_purchases: VecDeque::new(),
-            paused: Some(false),
+    let content = match fs::read_to_string(statepath) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!(
+                "ERROR: Can't read config file contents: {}",
+                err.to_string()
+            );
+            std::process::exit(1)
         }
+    };
+
+    match serde_json::from_str(&content) {
+        Ok(s) => s,
+        Err(_) => if let Ok(s) = legacy::migrate_statefile() { s } else {
+            eprintln!("Can neither read nor migrate statefile, continuing with default");
+            eprintln!("You're going to want to adjust the income, currently $1 per day.");
+            State::default()
+        },
     }
 }
 
 fn write_file(state: &State) -> Result<()> {
-    fs::write(file(), serde_json::to_string_pretty(state).unwrap())
+    fs::write(
+        config_file_path(),
+        serde_json::to_string_pretty(state).unwrap(),
+    )
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+fn write_current_queue(queue: Queue) -> Result<()> {
+    let mut state = read_file();
+    let mut nq: Vec<Queue> = state
+        .queues
+        .into_iter()
+        .filter(|q| q.name != queue.name)
+        .collect();
+    nq.push(queue);
+    state.queues = nq;
 
-    #[test]
-    fn should_calculate_accumulation() {
-        let now = Local::now();
-        let yesterday = now - chrono::Duration::days(1);
-        let demo_state = State {
-            income: Income {
-                amount: 100.0,
-                interval_in_days: 1,
-            },
-            last_calculation: yesterday.to_rfc2822(),
-            current_amount: M::from(0),
-            future_purchases: VecDeque::new(),
-            past_purchases: VecDeque::new(),
-            paused: Some(false)
-        };
-        let (_last_update, balance) = calculate_current_amount(&demo_state);
+    write_file(&state)
+}
 
-        assert_eq!(balance, M::from(100));
-    }
+fn currently_selected_queue() -> Queue {
+    let state = read_file();
+    let current_name = state.currently_selected.clone();
+    state.queues
+        .into_iter()
+        .find(|q| q.name == current_name)
+        .expect("Currently selected queue does not match any of the actual queues, present, you will need to fix this manually.")
 }
