@@ -34,7 +34,7 @@ pub fn cmd_queue(matches: &clap::ArgMatches) -> Result<()> {
 }
 
 pub fn cmd_queue_select(name: String) -> Result<()> {
-
+    Ok(())
 }
 
 pub fn cmd_queue_create(name: String) -> Result<()> {

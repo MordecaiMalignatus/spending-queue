@@ -253,8 +253,12 @@ fn cmd_bump() -> Result<()> {
                 "We already checked for queue length, thus must succeed in any sane universe",
             );
             let head_name = head.name.clone();
+            // Subtract 1 to go from length of list to valid, zero-based indices.
             let upper_bound = queue.future_purchases.len() - 1;
-            let new_position = rand::thread_rng().gen_range(1..upper_bound);
+            // The x..=y syntax is an inclusive range, the x..y syntax by
+            // default is *exclusive*, meaning that a range like 1..2 is empty,
+            // and causes `rand` to panic.
+            let new_position = rand::thread_rng().gen_range(1..=upper_bound);
             queue.future_purchases.insert(new_position, head);
             println!(
                 "Moved {} from head of queue to position {}. Next item is now {}.",
