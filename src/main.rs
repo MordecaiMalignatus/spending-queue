@@ -2,6 +2,7 @@
 mod io;
 mod legacy;
 mod types;
+mod queues;
 
 use ansi_term::Color;
 use ansi_term::Style;
@@ -82,6 +83,7 @@ fn main() {
                 .join(" ");
             cmd_add(to_add, prepend)
         }
+        ("queue", Some(m)) => queues::cmd_queue(m),
         _ => cmd_status(),
     };
 
@@ -173,6 +175,7 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 )
                 .arg(Arg::from_usage("<words>... 'Description of thing to buy'")),
         )
+        .subcommand(queues::subcommand())
         .get_matches()
 }
 
@@ -366,7 +369,7 @@ fn cmd_add(thing_to_add: String, prepend: bool) -> Result<()> {
 }
 
 fn cmd_status() -> Result<()> {
-    let state = read_file();
+    let state = read_state_file();
     let bold = Style::new().bold();
 
     if state.globally_paused {
@@ -465,7 +468,7 @@ pub fn config_file_path() -> PathBuf {
     home
 }
 
-fn read_file() -> State {
+fn read_state_file() -> State {
     let statepath = config_file_path();
     if !statepath.exists() {
         let mut t = config_file_path();
@@ -502,7 +505,7 @@ fn write_file(state: &State) -> Result<()> {
 }
 
 fn write_current_queue(queue: Queue) -> Result<()> {
-    let mut state = read_file();
+    let mut state = read_state_file();
     let mut nq: Vec<Queue> = state
         .queues
         .into_iter()
@@ -515,7 +518,7 @@ fn write_current_queue(queue: Queue) -> Result<()> {
 }
 
 fn currently_selected_queue() -> Queue {
-    let state = read_file();
+    let state = read_state_file();
     let current_name = state.currently_selected.clone();
     state.queues
         .into_iter()
