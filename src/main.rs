@@ -1,8 +1,8 @@
 #![warn(clippy::pedantic, clippy::all)]
 mod io;
 mod legacy;
-mod types;
 mod queues;
+mod types;
 
 use ansi_term::Color;
 use ansi_term::Style;
@@ -187,32 +187,38 @@ fn cmd_buy(
 ) -> Result<()> {
     let mut q = currently_selected_queue();
 
-    match q.future_purchases.front_mut() {
-        Some(item) => {
-            let cost = match new_price {
-                Some(x) => x,
-                None => item.amount,
-            };
+    if peek {
+        open_url(
+            &q.future_purchases
+                .front()
+                .expect("Can't peek non-existent item")
+                .purchase_link,
+        )?;
+    } else {
+        match q.future_purchases.front_mut() {
+            Some(item) => {
+                let cost = match new_price {
+                    Some(x) => x,
+                    None => item.amount,
+                };
+                if (cost < q.current_balance) || force {
+                    if !suppress_opening_url {
+                        open_url(&item.purchase_link.clone())?;
+                    }
 
-            if peek {
-                open_url(&item.purchase_link)?;
-            } else if cost < q.current_balance || force {
-                if !suppress_opening_url {
-                    open_url(&item.purchase_link.clone())?;
-                }
-
-                if yes_no_predicate(&format!("Did the item cost {}?", cost)) {
-                    purchase_next(cost, &mut q);
+                    if yes_no_predicate(&format!("Did the item cost {}?", cost)) {
+                        purchase_next(cost, &mut q);
+                    } else {
+                        let cost = parse_float_from_stdin("What did it cost?").into();
+                        purchase_next(cost, &mut q);
+                    }
                 } else {
-                    let cost = parse_float_from_stdin("What did it cost?").into();
-                    purchase_next(cost, &mut q);
+                    eprintln!("Can't buy item, not enough money accumulated.");
                 }
-            } else {
-                eprintln!("Can't buy item, not enough money accumulated.");
             }
-        }
-        None => {
-            eprintln!("No item in the queue, can't buy it!");
+            None => {
+                eprintln!("No item in the queue, can't buy it!");
+            }
         }
     }
 
@@ -248,6 +254,21 @@ fn cmd_bump() -> Result<()> {
     match queue.future_purchases.len() {
         0 => eprintln!("No items in the queue, can't bump anything."),
         1 => eprintln!("One item in the queue, can't bump anything."),
+        2 => {
+            let head = queue.future_purchases.pop_front().unwrap();
+            let name = head.name.clone();
+            // Exhange the first two items. If we do this with the code below,
+            // we ask `rand` to sample a range of 1..=1, causing a panic.
+            queue.future_purchases.insert(1, head);
+            println!(
+                "Moved {} from head of queue to position {}. Next item is now {}.",
+                bold.paint(name),
+                bold.paint("1"),
+                bold.paint(queue.future_purchases.front().unwrap().name.clone())
+            );
+            write_current_queue(queue)?;
+            cmd_status()?;
+        }
         _ => {
             let head = queue.future_purchases.pop_front().expect(
                 "We already checked for queue length, thus must succeed in any sane universe",
@@ -493,11 +514,15 @@ fn read_state_file() -> State {
 
     match serde_json::from_str(&content) {
         Ok(s) => s,
-        Err(_) => if let Ok(s) = legacy::migrate_statefile() { s } else {
-            eprintln!("Can neither read nor migrate statefile, continuing with default");
-            eprintln!("You're going to want to adjust the income, currently $1 per day.");
-            State::default()
-        },
+        Err(_) => {
+            if let Ok(s) = legacy::migrate_statefile() {
+                s
+            } else {
+                eprintln!("Can neither read nor migrate statefile, continuing with default");
+                eprintln!("You're going to want to adjust the income, currently $1 per day.");
+                State::default()
+            }
+        }
     }
 }
 
