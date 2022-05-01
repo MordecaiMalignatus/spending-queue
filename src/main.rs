@@ -437,7 +437,7 @@ fn cmd_status() -> Result<()> {
         };
 
         println!();
-        write_file(&state)
+        write_current_queue(queue)
     }
 }
 
